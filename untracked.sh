@@ -2,7 +2,15 @@
 
 set -eo pipefail
 
-[ "$1" = -v ] && VERBOSE=1
+VERBOSE= FORCE=
+while [ -n "$1" ]; do
+  case "$1" in
+    -v) VERBOSE=1 ;;
+    -f) FORCE=1 ;;
+    *) break ;;
+  esac
+  shift
+done
 log() { [ -z "$VERBOSE" ] || echo "untracked: $*" >&2; }
 
 find_bin() {
@@ -54,7 +62,7 @@ done
 # fingerprint of all file contents; skip upload if unchanged
 state=$("$GIT" rev-parse --git-path untracked.sha)
 hash=$(find "${existing[@]}" -type f -print0 | sort -z | xargs -0r sha256sum | sha256sum | cut -d' ' -f1)
-[ "$hash" = "$(cat "$state" 2>/dev/null)" ] && { log "no changes since last backup"; exit 0; }
+[ -z "$FORCE" ] && [ "$hash" = "$(cat "$state" 2>/dev/null)" ] && { log "no changes since last backup"; exit 0; }
 
 tmp=$(mktemp --suffix=.tar.gz)
 trap 'rm -f "$tmp"' EXIT
