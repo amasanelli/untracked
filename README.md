@@ -11,12 +11,40 @@ cp .untracked.conf.sample <repo>/.untracked.conf   # then edit
 
 ## rclone: Google Drive + crypt
 
-Backups contain secrets, so encrypt them before they reach Drive. Run `rclone config` and create two remotes:
+Backups contain secrets, so they are encrypted before they reach Drive. This uses two rclone remotes, one wrapping the other:
 
-1. **`gdrive`**: `n` (new remote) → name `gdrive` → storage `drive` → leave client id/secret empty → scope `drive.file` (rclone only sees files it created) → defaults for the rest → authorize in the browser when asked.
-2. **`gdrive-crypt`**: `n` → name `gdrive-crypt` → storage `crypt` → remote `gdrive:untracked` → filename encryption `standard` → directory name encryption `true` → `y` to type your own password → `y` for a second password (salt).
+- `gdrive` connects to your Google Drive.
+- `gdrive-crypt` sits on top of the `untracked` folder in `gdrive`. Anything written to `gdrive-crypt:` is encrypted (contents and names) and stored there.
 
-Store both passwords in a password manager. Without them the backups cannot be decrypted.
+The hook writes to `gdrive-crypt`. In Drive you see an `untracked` folder with scrambled file names.
+
+Run `rclone config` and create both remotes. Type the answers below; press Enter to accept the default at any prompt not listed.
+
+**1. `gdrive`**
+
+| Prompt | Answer | Why |
+|---|---|---|
+| `n/s/q>` or `e/n/d/r/c/s/q>` | `n` | new remote |
+| `name>` | `gdrive` | |
+| `Storage>` | `drive` | Google Drive |
+| `client_id>`, `client_secret>` | empty | use rclone's built-in app |
+| `scope>` | `drive.file` | rclone sees only files it created, not the rest of your Drive |
+| `Use web browser to automatically authenticate…?` | `y` | a browser opens; log in and allow access |
+
+**2. `gdrive-crypt`**
+
+| Prompt | Answer | Why |
+|---|---|---|
+| `e/n/d/r/c/s/q>` | `n` | new remote |
+| `name>` | `gdrive-crypt` | |
+| `Storage>` | `crypt` | encryption layer |
+| `remote>` | `gdrive:untracked` | where encrypted files go; the folder is created on first upload |
+| `filename_encryption>` | `standard` | file names are encrypted |
+| `directory_name_encryption>` | `true` | folder names (your repo names) are encrypted |
+| `password` → `y/g>` | `y`, then type it twice | encryption password |
+| `password2` → `y/g/n>` | `y`, then type a different one twice | salt, makes the password harder to brute-force |
+
+Store both passwords in a password manager. rclone keeps them in `~/.config/rclone/rclone.conf` only obscured, not encrypted: anyone with that file can decrypt the backups. If you lose that file and the passwords, nobody can, including you.
 
 Check it works:
 
