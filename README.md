@@ -60,20 +60,24 @@ Then use `dest=gdrive-crypt:` (or `gdrive-crypt:<path>`) in `.untracked.conf`.
 `<repo>/.untracked.conf`:
 
 ```
-dest=gdrive-crypt:backups
 name=myrepo
+
+dest=gdrive-crypt:backups
 .env
 secrets/
+
+dest=gdrive-crypt:shared
+config/local.yml
 ```
 
-- `dest`: rclone remote, optionally with a path (`gdrive-crypt`, `gdrive-crypt:`, `gdrive-crypt:backups`). The remote must exist in `rclone.conf`.
-- `name`: optional folder name. Defaults to the origin repo name, else the repo dir name.
+- `dest`: rclone remote, optionally with a path (`gdrive-crypt`, `gdrive-crypt:`, `gdrive-crypt:backups`). The remote must exist in `rclone.conf`. Applies to the paths listed after it, up to the next `dest`. Repeating a `dest` adds more paths to it. A path listed before the first `dest` is an error.
+- `name`: optional folder name, used for every dest. Defaults to the origin repo name, else the repo dir name.
 - any other line: file or dir relative to the repo root. Must be gitignored; tracked, absolute and `..` paths are skipped.
 - lines starting with `#` are comments.
 
 ## Output
 
-Each backup is a new file `<dest>/<name>/YYYY-MM-DD_HHMMSS.tar.gz`. Existing files are never overwritten.
+Each dest gets its own archive, a new file `<dest>/<name>/YYYY-MM-DD_HHMMSS.tar.gz` holding only its paths. Existing files are never overwritten.
 
 List backups, and the files inside one:
 
@@ -82,10 +86,10 @@ rclone lsl gdrive-crypt:backups/myrepo/
 rclone cat gdrive-crypt:backups/myrepo/2026-09-24_220438.tar.gz | tar -tzv
 ```
 
-The hash of the last backup is kept in `.git/untracked.sha`. To force a new upload, run inside the repo:
+A dest is uploaded only when its files changed since its last backup (hash kept in `.git/untracked-<id>.sha`). To upload every dest anyway, run inside the repo:
 
 ```bash
-rm -f "$(git rev-parse --git-path untracked.sha)"
+untracked.sh -f
 ```
 
 ## Debugging
