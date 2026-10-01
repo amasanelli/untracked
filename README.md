@@ -55,6 +55,20 @@ rclone lsd gdrive-crypt:
 
 Then use `dest=gdrive-crypt:` (or `gdrive-crypt:<path>`) in `.untracked.conf`.
 
+## rclone: local or external drive
+
+Create an `alias` remote pointing at a folder on the drive:
+
+```bash
+rclone config create usb alias remote=/run/media/$USER/MyDrive/untracked
+```
+
+Then use `dest=usb:` in `.untracked.conf`. Backups land in `/run/media/<user>/MyDrive/untracked/<name>/`; missing folders are created.
+
+The drive must be mounted when the hook runs. If it isn't, the upload fails, unless the empty mount-point directory is writable: then the backup lands on your main disk instead.
+
+To encrypt these backups too, create a crypt remote like `gdrive-crypt` above, with `remote>` set to `usb:`, and use that remote as `dest`.
+
 ## Config
 
 `<repo>/.untracked.conf`:
