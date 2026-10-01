@@ -4,9 +4,20 @@ Git hook that backs up gitignored files (`.env`, secrets, local configs) to an r
 
 ## Setup
 
+Install [rclone](https://rclone.org/install/):
+
 ```bash
+sudo dnf install rclone                          # Fedora
+sudo apt install rclone                          # Debian/Ubuntu
+curl https://rclone.org/install.sh | sudo bash   # any Linux, latest version
+```
+
+Clone this repo and hook it into each repo you want backed up:
+
+```bash
+git clone https://github.com/amasanelli/untracked.git ~/hub/untracked
 ln -s ~/hub/untracked/untracked.sh <repo>/.git/hooks/post-commit
-cp .untracked.conf.sample <repo>/.untracked.conf   # then edit
+cp ~/hub/untracked/.untracked.conf.sample <repo>/.untracked.conf   # then edit
 ```
 
 ## rclone: Google Drive + crypt
