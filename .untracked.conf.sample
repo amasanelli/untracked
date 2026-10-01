@@ -1,12 +1,15 @@
 # Copy to <repo>/.untracked.conf. One entry per line.
 
-# rclone destination (must be a remote from rclone.conf)
-dest=gdrive-crypt:backups
-
-# Optional: uploaded to <dest>/<name>/<timestamp>.tar.gz. Defaults to origin repo name, else dir name.
+# Optional: uploaded to <dest>/<name>/<timestamp>.tar.gz, for every dest. Defaults to origin repo name, else dir name.
 # name=myrepo
+
+# rclone destination (must be a remote from rclone.conf). Applies to the paths below it, up to the next dest.
+dest=gdrive-crypt:backups
 
 # Files/dirs to back up, relative to repo root. Must be gitignored; missing ones are skipped.
 .env
-config/local.yaml
 secrets/
+
+# Another destination with its own paths, uploaded as a separate archive.
+dest=gdrive-crypt:shared
+config/local.yaml
