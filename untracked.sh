@@ -56,14 +56,16 @@ CONF=.untracked.conf
 [ -f "$CONF" ] && [ -r "$CONF" ] || die "can't read $CONF (broken symlink?)"
 
 # each dest= line applies to the paths below it, until the next dest=
-DEST= NAME= FILES=() FILE_DESTS=()
+declare -A seen
+DEST= NAME= FILES=() FILE_DESTS=() DESTS=()
 while read -r line || [ -n "$line" ]; do  # also read a last line without trailing newline
   case $line in
     '' | \#*) ;;
     dest=*)
       DEST=${line#dest=}
       [[ $DEST == *:* ]] || DEST+=:  # bare remote name -> remote root
-      DEST=${DEST%/} ;;
+      DEST=${DEST%/}
+      [ -n "${seen[$DEST]}" ] || { seen[$DEST]=1; DESTS+=("$DEST"); } ;;  # unique, in config order
     name=*) NAME=${line#name=} ;;
     /* | .. | ../* | */.. | */../*) err "$line: outside the repo, not backed up" ;;
     *)
@@ -71,10 +73,8 @@ while read -r line || [ -n "$line" ]; do  # also read a last line without traili
       else FILES+=("$line"); FILE_DESTS+=("$DEST"); fi ;;
   esac
 done < "$CONF"
-[ ${#FILES[@]} -gt 0 ] || { log "nothing to back up from $CONF, skipping"; finish; }
+[ ${#DESTS[@]} -gt 0 ] || { err "$CONF has no dest= line, nothing backed up"; finish; }
 
-declare -A seen; DESTS=()  # unique, in config order
-for d in "${FILE_DESTS[@]}"; do [ -n "${seen[$d]}" ] || { seen[$d]=1; DESTS+=("$d"); }; done
 remotes=$("$RCLONE" listremotes) || die "can't list rclone remotes"
 # default: repo name from origin URL, else main worktree's directory name
 if [ -z "$NAME" ]; then
@@ -84,7 +84,7 @@ if [ -z "$NAME" ]; then
   NAME=$(basename "$src" .git)
 fi
 NAME=${NAME//\//_}
-[ -n "$NAME" ] || die "can't work out the repo name, set name= in $CONF"
+case $NAME in '' | . | ..) die "can't use '$NAME' as the backup folder name, set name= in $CONF" ;; esac
 # as a pre-commit hook: the parent of the commit being made; none in a repo with no commits yet
 rc=0; COMMIT=$("$GIT" rev-parse -q --verify --short HEAD) || rc=$?
 case $rc in 0) ;; 1) COMMIT=none ;; *) die "can't read HEAD" ;; esac
@@ -95,9 +95,10 @@ trap 'rm -f "$tmp"' EXIT
 for DEST in "${DESTS[@]}"; do
   grep -qxF "${DEST%%:*}:" <<< "$remotes" ||
     { err "dest '$DEST' is not on a configured rclone remote, nothing backed up to it"; continue; }
-  existing=()
+  existing=() listed=0
   for i in "${!FILES[@]}"; do
     [ "${FILE_DESTS[i]}" = "$DEST" ] || continue
+    listed=$((listed + 1))
     f=${FILES[i]}
     [ -e "$f" ] || { err "$f: missing, not backed up to $DEST"; continue; }
     rc=0; "$GIT" check-ignore -q -- "$(git_path "$f")" || rc=$?
@@ -107,6 +108,7 @@ for DEST in "${DESTS[@]}"; do
       *) err "$f: git check-ignore failed, not backed up to $DEST" ;;
     esac
   done
+  [ "$listed" -gt 0 ] || { err "dest '$DEST' has no paths listed under it in $CONF"; continue; }
   [ ${#existing[@]} -gt 0 ] || { log "nothing to back up to $DEST, skipping"; continue; }
 
   # fingerprint of all file contents (symlinks followed), one per dest, name and real paths;

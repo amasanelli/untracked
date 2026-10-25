@@ -95,7 +95,7 @@ dest=gdrive-crypt:shared
 config/local.yml
 ```
 
-- `dest`: rclone remote, optionally with a path (`gdrive-crypt`, `gdrive-crypt:`, `gdrive-crypt:backups`). The remote must exist in `rclone.conf`. Applies to the paths listed after it, up to the next `dest`. Repeating a `dest` adds more paths to it. A path listed before the first `dest` is an error.
+- `dest`: rclone remote, optionally with a path (`gdrive-crypt`, `gdrive-crypt:`, `gdrive-crypt:backups`). The remote must exist in `rclone.conf`. Applies to the paths listed after it, up to the next `dest`. Repeating a `dest` adds more paths to it. A path listed before the first `dest`, or a `dest` with no paths, is an error.
 - `name`: optional folder name, used for every dest. Defaults to the origin repo name, else the main worktree's dir name.
 - any other line: file or dir relative to the repo root. It must exist and be gitignored; a missing, tracked, absolute or `..` path is an error. Symlinks are followed: the archive holds what they point to.
 - lines starting with `#` are comments.
