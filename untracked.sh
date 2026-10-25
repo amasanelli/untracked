@@ -87,9 +87,10 @@ for DEST in "${DESTS[@]}"; do
   # fingerprint of all file contents (symlinks followed), one per dest, name and real paths;
   # skip upload if unchanged. Kept in the common git dir, so a path linked into several
   # worktrees is uploaded once per change
-  key=$(printf '%s\n' "$DEST" "$NAME" "$(realpath "${existing[@]}" | sort)" | sha256sum | cut -c1-16)
+  key=$(printf '%s\n' "$DEST" "$NAME" "$(realpath "${existing[@]}" | LC_ALL=C sort)" | sha256sum | cut -c1-16)
   state="$("$GIT" rev-parse --git-common-dir)/untracked-$key.sha"
-  hash=$(find -L "${existing[@]}" -type f -print0 | sort -z | xargs -0r sha256sum | sha256sum | cut -d' ' -f1)
+  # C locale: same order, so same key and hash, whatever locale the hook runs under
+  hash=$(find -L "${existing[@]}" -type f -print0 | LC_ALL=C sort -z | xargs -0r sha256sum | sha256sum | cut -d' ' -f1)
   [ -z "$FORCE" ] && [ "$hash" = "$(cat "$state" 2>/dev/null)" ] && { log "no changes for $DEST since last backup"; continue; }
 
   tar -chzf "$tmp" "${existing[@]}"
