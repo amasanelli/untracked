@@ -52,7 +52,7 @@ log "using rclone=$RCLONE git=$GIT"
 top=$("$GIT" rev-parse --show-toplevel) || die "not inside a git work tree"
 cd "$top"
 CONF=.untracked.conf
-[ -e "$CONF" ] || [ -L "$CONF" ] || { log "no $CONF in $PWD, skipping"; exit 0; }
+[ -e "$CONF" ] || [ -L "$CONF" ] || { err "no $CONF in $PWD, nothing backed up (in a worktree: link it from the main checkout)"; finish; }
 [ -f "$CONF" ] && [ -r "$CONF" ] || die "can't read $CONF (broken symlink?)"
 
 # each dest= line applies to the paths below it, until the next dest=

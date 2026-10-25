@@ -102,7 +102,7 @@ config/local.yml
 
 ## Worktrees
 
-The hook runs in every worktree of the repo. To back up from a worktree without copying the files, symlink them from the main checkout:
+The hook runs in every worktree of the repo, and each one needs a `.untracked.conf`: without one the commit is blocked. To back up from a worktree without copying the files, symlink them from the main checkout:
 
 ```bash
 cd <worktree>
@@ -134,7 +134,7 @@ untracked.sh -f
 
 ## Errors
 
-Any problem prints an `untracked: ERROR:` line: a listed path that is missing, not gitignored or outside the repo, an unknown remote, a file that can't be read, a failed upload, an archive name that already exists. The other dests are still backed up, then the hook exits 1 and git aborts the commit.
+Any problem prints an `untracked: ERROR:` line: no `.untracked.conf`, a `dest` with no paths, a listed path that is missing, not gitignored or outside the repo, an unknown remote, a file that can't be read, a failed upload, an archive name that already exists. The other dests are still backed up, then the hook exits 1 and git aborts the commit.
 
 Fix the problem and commit again, or skip the backup for one commit:
 
@@ -150,4 +150,4 @@ The remote is needed only when files changed since their last backup, so you can
 untracked.sh -v
 ```
 
-Run inside a repo to see why nothing was uploaded (no config, no changes).
+Run inside a repo to see why nothing was uploaded (no changes).
