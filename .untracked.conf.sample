@@ -1,6 +1,6 @@
 # Copy to <repo>/.untracked.conf. One entry per line.
 
-# Optional: uploaded to <dest>/<name>/<timestamp>.tar.gz, for every dest. Defaults to origin repo name, else dir name.
+# Optional: uploaded to <dest>/<name>/<timestamp>_<sha>.tar.gz, for every dest. Defaults to origin repo name, else the main worktree's dir name.
 # name=myrepo
 
 # rclone destination (must be a remote from rclone.conf). Applies to the paths below it, up to the next dest.
