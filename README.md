@@ -96,22 +96,35 @@ config/local.yml
 ```
 
 - `dest`: rclone remote, optionally with a path (`gdrive-crypt`, `gdrive-crypt:`, `gdrive-crypt:backups`). The remote must exist in `rclone.conf`. Applies to the paths listed after it, up to the next `dest`. Repeating a `dest` adds more paths to it. A path listed before the first `dest` is an error.
-- `name`: optional folder name, used for every dest. Defaults to the origin repo name, else the repo dir name.
-- any other line: file or dir relative to the repo root. Must be gitignored; tracked, absolute and `..` paths are skipped.
+- `name`: optional folder name, used for every dest. Defaults to the origin repo name, else the main worktree's dir name.
+- any other line: file or dir relative to the repo root. Must be gitignored; tracked, absolute and `..` paths are skipped. Symlinks are followed: the archive holds what they point to.
 - lines starting with `#` are comments.
+
+## Worktrees
+
+The hook runs in every worktree of the repo. To back up from a worktree without copying the files, symlink them from the main checkout:
+
+```bash
+cd <worktree>
+ln -s <main>/.untracked.conf <main>/.env .
+```
+
+Git sees a symlink as a file, so a `dir/` pattern doesn't ignore a linked dir, and the dir is skipped as not gitignored. Ignore it with `dir` or `/dir` instead, or add that to `<main>/.git/info/exclude`, which applies to all worktrees.
+
+A path linked from several worktrees is uploaded once per change, by whichever worktree commits first. If a worktree has real copies instead of symlinks, its changes are backed up separately from the main checkout's. Both go to the same `<dest>/<name>/` folder; the `<sha>` in the archive name tells you which branch each came from.
 
 ## Output
 
-Each dest gets its own archive, a new file `<dest>/<name>/YYYY-MM-DD_HHMMSS.tar.gz` holding only its paths. Existing files are never overwritten.
+Each dest gets its own archive, a new file `<dest>/<name>/YYYY-MM-DD_HHMMSS_<sha>.tar.gz` holding only its paths, where `<sha>` is the short hash of the commit checked out at backup time (`none` before the first commit). Existing files are never overwritten.
 
 List backups, and the files inside one:
 
 ```bash
 rclone lsl gdrive-crypt:backups/myrepo/
-rclone cat gdrive-crypt:backups/myrepo/2026-09-24_220438.tar.gz | tar -tzv
+rclone cat gdrive-crypt:backups/myrepo/2026-09-24_220438_4e67d3c.tar.gz | tar -tzv
 ```
 
-A dest is uploaded only when its files changed since its last backup (hash kept in `.git/untracked-<id>.sha`). To upload every dest anyway, run inside the repo:
+A dest is uploaded only when its files changed since its last backup (hash kept in `.git/untracked-<id>.sha`, shared by all worktrees). To upload every dest anyway, run inside the repo:
 
 ```bash
 untracked.sh -f

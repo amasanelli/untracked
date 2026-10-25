@@ -24,6 +24,17 @@ find_bin() {
   exit 1
 }
 
+# git sees a symlink as a file and can't look past it: check the first symlinked component
+git_path() {
+  local p= part parts
+  IFS=/ read -ra parts <<< "${1%/}"
+  for part in "${parts[@]}"; do
+    p+=${p:+/}$part
+    [ -L "$p" ] && { echo "$p"; return; }
+  done
+  echo "$1"
+}
+
 RCLONE=$(find_bin rclone)
 GIT=$(find_bin git)
 log "using rclone=$RCLONE git=$GIT"
@@ -55,9 +66,10 @@ remotes=$("$RCLONE" listremotes)
 for DEST in "${DESTS[@]}"; do
   grep -qxF "${DEST%%:*}:" <<< "$remotes" || { echo "untracked: dest '$DEST' is not on a configured rclone remote" >&2; exit 1; }
 done
-# default: repo name from origin URL, else directory name
-NAME=${NAME:-$(basename "$("$GIT" remote get-url origin 2>/dev/null || echo "$PWD")" .git)}
+# default: repo name from origin URL, else main worktree's directory name
+NAME=${NAME:-$(basename "$("$GIT" remote get-url origin 2>/dev/null || "$GIT" worktree list --porcelain | sed -n '1s/^worktree //p')" .git)}
 NAME=${NAME//\//_}
+COMMIT=$("$GIT" rev-parse -q --verify --short HEAD || echo none)  # repo with no commits yet -> none
 
 tmp=$(mktemp --suffix=.tar.gz)
 trap 'rm -f "$tmp"' EXIT
@@ -68,19 +80,22 @@ for DEST in "${DESTS[@]}"; do
     [ "${FILE_DESTS[i]}" = "$DEST" ] || continue
     f=${FILES[i]}
     if [ ! -e "$f" ]; then log "missing, skipped: $f"
-    elif ! "$GIT" check-ignore -q -- "$f"; then echo "untracked: not gitignored, skipped: $f" >&2
+    elif ! "$GIT" check-ignore -q -- "$(git_path "$f")"; then echo "untracked: not gitignored, skipped: $f" >&2
     else existing+=("$f"); fi
   done
   [ ${#existing[@]} -gt 0 ] || { log "nothing to back up to $DEST, skipping"; continue; }
 
-  # fingerprint of all file contents, one per dest; skip upload if unchanged
-  state=$("$GIT" rev-parse --git-path "untracked-$(printf %s "$DEST" | sha256sum | cut -c1-16).sha")
-  hash=$(find "${existing[@]}" -type f -print0 | sort -z | xargs -0r sha256sum | sha256sum | cut -d' ' -f1)
+  # fingerprint of all file contents (symlinks followed), one per dest, name and real paths;
+  # skip upload if unchanged. Kept in the common git dir, so a path linked into several
+  # worktrees is uploaded once per change
+  key=$(printf '%s\n' "$DEST" "$NAME" "$(realpath "${existing[@]}" | sort)" | sha256sum | cut -c1-16)
+  state="$("$GIT" rev-parse --git-common-dir)/untracked-$key.sha"
+  hash=$(find -L "${existing[@]}" -type f -print0 | sort -z | xargs -0r sha256sum | sha256sum | cut -d' ' -f1)
   [ -z "$FORCE" ] && [ "$hash" = "$(cat "$state" 2>/dev/null)" ] && { log "no changes for $DEST since last backup"; continue; }
 
-  tar -czf "$tmp" "${existing[@]}"
+  tar -chzf "$tmp" "${existing[@]}"
   [[ $DEST == *: ]] && sep= || sep=/  # "remote:" root takes no slash
-  target="$DEST$sep$NAME/$(date +%F_%H%M%S).tar.gz"
+  target="$DEST$sep$NAME/$(date +%F_%H%M%S)_$COMMIT.tar.gz"
   if "$RCLONE" lsf "$target" >/dev/null 2>&1; then
     echo "untracked: $target already exists, not overwriting" >&2
     status=1; continue
