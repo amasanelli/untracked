@@ -3,13 +3,12 @@
 set -eo pipefail
 
 VERBOSE= FORCE=
-while [ -n "$1" ]; do
-  case "$1" in
-    -v) VERBOSE=1 ;;
-    -f) FORCE=1 ;;
-    *) break ;;
+while getopts vf opt; do  # stops at the first non-option, e.g. args git passes to other hooks
+  case $opt in
+    v) VERBOSE=1 ;;
+    f) FORCE=1 ;;
+    *) echo "usage: untracked.sh [-v] [-f]" >&2; exit 2 ;;
   esac
-  shift
 done
 log() { [ -z "$VERBOSE" ] || echo "untracked: $*" >&2; }
 
