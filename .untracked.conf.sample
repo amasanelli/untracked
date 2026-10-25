@@ -6,7 +6,7 @@
 # rclone destination (must be a remote from rclone.conf). Applies to the paths below it, up to the next dest.
 dest=gdrive-crypt:backups
 
-# Files/dirs to back up, relative to repo root. Must be gitignored; missing ones are skipped.
+# Files/dirs to back up, relative to repo root. Each must exist and be gitignored, or the commit is blocked.
 .env
 secrets/
 

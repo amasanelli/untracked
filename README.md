@@ -1,6 +1,6 @@
 # untracked
 
-Git hook that backs up gitignored files (`.env`, secrets, local configs) to an rclone remote. Uploads only when their contents change.
+Git pre-commit hook that backs up gitignored files (`.env`, secrets, local configs) to an rclone remote. Uploads only when their contents change. If anything goes wrong, the commit is blocked (see [Errors](#errors)).
 
 ## Setup
 
@@ -16,7 +16,7 @@ Clone this repo and hook it into each repo you want backed up:
 
 ```bash
 git clone https://github.com/amasanelli/untracked.git ~/hub/untracked
-ln -s ~/hub/untracked/untracked.sh <repo>/.git/hooks/post-commit
+ln -s ~/hub/untracked/untracked.sh <repo>/.git/hooks/pre-commit
 cp ~/hub/untracked/.untracked.conf.sample <repo>/.untracked.conf   # then edit
 ```
 
@@ -76,7 +76,7 @@ rclone config create usb alias remote=/run/media/$USER/MyDrive/untracked
 
 Then use `dest=usb:` in `.untracked.conf`. Backups land in `/run/media/<user>/MyDrive/untracked/<name>/`; missing folders are created.
 
-The drive must be mounted when the hook runs. If it isn't, the upload fails, unless the empty mount-point directory is writable: then the backup lands on your main disk instead.
+The drive must be mounted when the hook runs. If it isn't, the upload fails and the commit is blocked, unless the empty mount-point directory is writable: then the backup lands on your main disk instead.
 
 To encrypt these backups too, create a crypt remote like `gdrive-crypt` above, with `remote>` set to `usb:`, and use that remote as `dest`.
 
@@ -97,7 +97,7 @@ config/local.yml
 
 - `dest`: rclone remote, optionally with a path (`gdrive-crypt`, `gdrive-crypt:`, `gdrive-crypt:backups`). The remote must exist in `rclone.conf`. Applies to the paths listed after it, up to the next `dest`. Repeating a `dest` adds more paths to it. A path listed before the first `dest` is an error.
 - `name`: optional folder name, used for every dest. Defaults to the origin repo name, else the main worktree's dir name.
-- any other line: file or dir relative to the repo root. Must be gitignored; tracked, absolute and `..` paths are skipped. Symlinks are followed: the archive holds what they point to.
+- any other line: file or dir relative to the repo root. It must exist and be gitignored; a missing, tracked, absolute or `..` path is an error. Symlinks are followed: the archive holds what they point to.
 - lines starting with `#` are comments.
 
 ## Worktrees
@@ -109,13 +109,15 @@ cd <worktree>
 ln -s <main>/.untracked.conf <main>/.env .
 ```
 
-Git sees a symlink as a file, so a `dir/` pattern doesn't ignore a linked dir, and the dir is skipped as not gitignored. Ignore it with `dir` or `/dir` instead, or add that to `<main>/.git/info/exclude`, which applies to all worktrees.
+Every listed path must be there, linked or copied: a missing one blocks the commit.
+
+Git sees a symlink as a file, so a `dir/` pattern doesn't ignore a linked dir, and the hook reports it as not gitignored. Ignore it with `dir` or `/dir` instead, or add that to `<main>/.git/info/exclude`, which applies to all worktrees.
 
 A path linked from several worktrees is uploaded once per change, by whichever worktree commits first. If a worktree has real copies instead of symlinks, its changes are backed up separately from the main checkout's. Both go to the same `<dest>/<name>/` folder; the `<sha>` in the archive name tells you which branch each came from.
 
 ## Output
 
-Each dest gets its own archive, a new file `<dest>/<name>/YYYY-MM-DD_HHMMSS_<sha>.tar.gz` holding only its paths, where `<sha>` is the short hash of the commit checked out at backup time (`none` before the first commit). Existing files are never overwritten.
+Each dest gets its own archive, a new file `<dest>/<name>/YYYY-MM-DD_HHMMSS_<sha>.tar.gz` holding only its paths, where `<sha>` is the short hash of the commit checked out at backup time, i.e. the parent of the commit being made (`none` on the first commit). Existing files are never overwritten.
 
 List backups, and the files inside one:
 
@@ -130,10 +132,22 @@ A dest is uploaded only when its files changed since its last backup (hash kept 
 untracked.sh -f
 ```
 
+## Errors
+
+Any problem prints an `untracked: ERROR:` line: a listed path that is missing, not gitignored or outside the repo, an unknown remote, a file that can't be read, a failed upload, an archive name that already exists. The other dests are still backed up, then the hook exits 1 and git aborts the commit.
+
+Fix the problem and commit again, or skip the backup for one commit:
+
+```bash
+git commit --no-verify
+```
+
+The remote is needed only when files changed since their last backup, so you can commit offline as long as they didn't.
+
 ## Debugging
 
 ```bash
 untracked.sh -v
 ```
 
-Run inside a repo to see why nothing was uploaded (no config, missing files, no changes).
+Run inside a repo to see why nothing was uploaded (no config, no changes).
