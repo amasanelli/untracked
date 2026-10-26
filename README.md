@@ -123,6 +123,8 @@ A path linked from several worktrees is uploaded once per change, by whichever w
 
 Each dest and name gets its own archive, a new file `<dest>/<name>/YYYY-MM-DD_HHMMSS_<sha>.tar.gz` holding only its paths, where `<sha>` is the short hash of the commit checked out at backup time, i.e. the parent of the commit being made (`none` on the first commit). Existing files are never overwritten.
 
+The archive is streamed to the remote (`tar | rclone rcat`) as `<archive>.partial` and renamed when complete, with no temp file in `/tmp`, so its size isn't limited by it. If the upload fails or the hook is interrupted, the `.partial` file is deleted, so no half-written archive is left.
+
 List backups, and the files inside one:
 
 ```bash

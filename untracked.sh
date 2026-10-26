@@ -103,8 +103,11 @@ rc=0; COMMIT=$("$GIT" rev-parse -q --verify --short HEAD) || rc=$?
 case $rc in 0) ;; 1) COMMIT=none ;; *) die "can't read HEAD" ;; esac
 common=$("$GIT" rev-parse --git-common-dir) || die "can't find the git dir"
 
-tmp=$(mktemp --suffix=.tar.gz) || die "can't create a temp file"
-trap 'rm -f "$tmp"' EXIT
+# The archive being uploaded, under a .partial name until it's complete: deleted if the upload
+# fails or is interrupted, so no half-written archive is left
+uploading=
+discard() { [ -z "$uploading" ] || "$RCLONE" deletefile "$uploading" >/dev/null 2>&1 || true; uploading=; }
+trap 'discard; err "interrupted, no archive left"; finish' INT TERM
 for a in "${!DESTS[@]}"; do
   DEST=${DESTS[a]} NAME=${NAMES[a]}
   [[ $DEST == *: ]] && sep= || sep=/  # "remote:" root takes no slash
@@ -141,7 +144,6 @@ for a in "${!DESTS[@]}"; do
   [ ! -e "$state" ] || prev=$(cat "$state") || err "can't read $state, uploading $where anyway"
   [ -z "$FORCE" ] && [ "$hash" = "$prev" ] && { log "no changes for $where since last backup"; continue; }
 
-  tar -chzf "$tmp" "${existing[@]}" || { err "can't archive the files for $where, not backed up"; continue; }
   target="$where/$(date +%F_%H%M%S)_$COMMIT.tar.gz"
   rc=0; lsf_err=$("$RCLONE" lsf "$target" 2>&1 >/dev/null) || rc=$?  # keep only stderr
   case $rc in
@@ -149,7 +151,15 @@ for a in "${!DESTS[@]}"; do
     3 | 4) ;;  # rclone: directory / file not found, free to upload
     *) echo "$lsf_err" >&2; err "can't check whether $target exists, not backed up"; continue ;;
   esac
-  "$RCLONE" copyto "$tmp" "$target" || { err "upload to $target failed"; continue; }
+  # --inplace: rclone writes the .partial file itself, not a temp file of its own beside it
+  uploading=$target.partial
+  if ! tar -chzf - "${existing[@]}" | "$RCLONE" rcat --inplace "$uploading"; then
+    discard; err "upload to $target failed, no archive left"; continue
+  fi
+  if ! "$RCLONE" moveto "$uploading" "$target"; then
+    discard; err "can't rename $target.partial to $target, no archive left"; continue
+  fi
+  uploading=
   echo "untracked: backed up ${#existing[@]} path(s) to $target"
   echo "$hash" > "$state" || err "can't save $state, $where is uploaded again next time"
 done
