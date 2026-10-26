@@ -52,7 +52,7 @@ log "using rclone=$RCLONE git=$GIT"
 top=$("$GIT" rev-parse --show-toplevel) || die "not inside a git work tree"
 cd "$top"
 CONF=.untracked.conf
-# -L: a broken symlink isn't "no config", it fails the next check
+# -L: a broken symlink counts as a config, and fails the next check
 [ -e "$CONF" ] || [ -L "$CONF" ] || die "no $CONF in $PWD, nothing backed up (in a worktree: link it from the main checkout)"
 [ -f "$CONF" ] && [ -r "$CONF" ] || die "$CONF is not a readable file (broken symlink?)"
 
