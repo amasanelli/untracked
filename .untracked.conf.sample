@@ -1,6 +1,6 @@
 # Copy to <repo>/.untracked.conf. One entry per line.
 
-# Optional: uploaded to <dest>/<name>/<timestamp>_<sha>.tar.gz, for every dest. Defaults to origin repo name, else the main worktree's dir name.
+# Optional: uploaded to <dest>/<name>/<timestamp>_<sha>.tar.gz. Here, before the first dest, it is the default for every dest; defaults to origin repo name, else the main worktree's dir name.
 # name=myrepo
 
 # rclone destination (must be a remote from rclone.conf). Applies to the paths below it, up to the next dest.
@@ -13,3 +13,8 @@ secrets/
 # Another destination with its own paths, uploaded as a separate archive.
 dest=gdrive-crypt:shared
 config/local.yaml
+
+# A dest again with a name= of its own: a separate archive, in <dest>/<name>/ (here gdrive-crypt:backups/myrepo-data/).
+dest=gdrive-crypt:backups
+name=myrepo-data
+data/

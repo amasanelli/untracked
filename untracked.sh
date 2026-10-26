@@ -56,9 +56,9 @@ CONF=.untracked.conf
 [ -e "$CONF" ] || [ -L "$CONF" ] || die "no $CONF in $PWD, nothing backed up (in a worktree: link it from the main checkout)"
 [ -f "$CONF" ] && [ -r "$CONF" ] || die "$CONF is not a readable file (broken symlink?)"
 
-# each dest= line applies to the paths below it, until the next dest=
-declare -A seen
-DEST= NAME= FILES=() FILE_DESTS=() DESTS=()
+# Each dest= starts a block: the paths below it, up to the next dest=. A name= inside a
+# block names that block's folder; a name= before the first dest= is the default for every block
+DEST= DEFAULT_NAME= FILES=() FILE_BLOCKS=() BLOCK_DESTS=() BLOCK_NAMES=()
 while read -r line || [ -n "$line" ]; do  # also read a last line without trailing newline
   line=${line%$'\r'}  # CRLF file: drop the CR
   case $line in
@@ -67,25 +67,37 @@ while read -r line || [ -n "$line" ]; do  # also read a last line without traili
       DEST=${line#dest=}
       [[ $DEST == *:* ]] || DEST+=:  # bare remote name -> remote root
       DEST=${DEST%/}
-      [ -n "${seen[$DEST]}" ] || { seen[$DEST]=1; DESTS+=("$DEST"); } ;;  # unique, in config order
-    name=*) NAME=${line#name=} ;;
+      BLOCK_DESTS+=("$DEST"); BLOCK_NAMES+=("") ;;
+    name=*)
+      if [ -z "$DEST" ]; then DEFAULT_NAME=${line#name=}
+      else BLOCK_NAMES[-1]=${line#name=}; fi ;;
     *)
       [[ $line != -* ]] || line=./$line  # or realpath, find and tar take it for an option
       if [ -z "$DEST" ]; then err "$line: listed before any dest= in $CONF, not backed up"
-      else FILES+=("$line"); FILE_DESTS+=("$DEST"); fi ;;
+      else FILES+=("$line"); FILE_BLOCKS+=($((${#BLOCK_DESTS[@]} - 1))); fi ;;
   esac
 done < "$CONF"
-[ ${#DESTS[@]} -gt 0 ] || die "$CONF has no dest= line, nothing backed up"
+[ ${#BLOCK_DESTS[@]} -gt 0 ] || die "$CONF has no dest= line, nothing backed up"
 
 remotes=$("$RCLONE" listremotes) || die "can't list rclone remotes"
-if [ -z "$NAME" ]; then  # origin's repo name, else the main worktree's dir name
+# a block without a name= uses the default: origin's repo name, else the main worktree's dir name
+if [ -z "$DEFAULT_NAME" ] && printf '%s\n' "${BLOCK_NAMES[@]}" | grep -qx ''; then
   git_remotes=$("$GIT" remote) || die "can't list git remotes"
   if grep -qxF origin <<< "$git_remotes"; then src=$("$GIT" remote get-url origin) || die "can't read origin's URL"
   else src=$("$GIT" worktree list --porcelain | sed -n '1s/^worktree //p') || die "can't list worktrees"; fi
-  NAME=$(basename "$src" .git)
+  DEFAULT_NAME=$(basename "$src" .git)
 fi
-NAME=${NAME//\//_}
-case $NAME in '' | . | ..) die "can't use '$NAME' as the backup folder name, set name= in $CONF" ;; esac
+# Blocks with the same dest and name make one archive: unique, in config order
+declare -A archive_of
+DESTS=() NAMES=() BLOCK_ARCHIVES=()
+for b in "${!BLOCK_DESTS[@]}"; do
+  name=${BLOCK_NAMES[b]:-$DEFAULT_NAME}
+  name=${name//\//_}
+  case $name in '' | . | ..) die "can't use '$name' as the backup folder name, set name= in $CONF" ;; esac
+  id=${BLOCK_DESTS[b]}$'\n'$name
+  [ -n "${archive_of[$id]}" ] || { archive_of[$id]=${#DESTS[@]}; DESTS+=("${BLOCK_DESTS[b]}"); NAMES+=("$name"); }
+  BLOCK_ARCHIVES+=("${archive_of[$id]}")
+done
 # HEAD is the parent of the commit being made; rc 1: no commits yet
 rc=0; COMMIT=$("$GIT" rev-parse -q --verify --short HEAD) || rc=$?
 case $rc in 0) ;; 1) COMMIT=none ;; *) die "can't read HEAD" ;; esac
@@ -93,42 +105,44 @@ common=$("$GIT" rev-parse --git-common-dir) || die "can't find the git dir"
 
 tmp=$(mktemp --suffix=.tar.gz) || die "can't create a temp file"
 trap 'rm -f "$tmp"' EXIT
-for DEST in "${DESTS[@]}"; do
+for a in "${!DESTS[@]}"; do
+  DEST=${DESTS[a]} NAME=${NAMES[a]}
+  [[ $DEST == *: ]] && sep= || sep=/  # "remote:" root takes no slash
+  where=$DEST$sep$NAME
   grep -qxF "${DEST%%:*}:" <<< "$remotes" ||
-    { err "dest '$DEST' is not on a configured rclone remote, nothing backed up to it"; continue; }
+    { err "dest '$DEST' is not on a configured rclone remote, nothing backed up to $where"; continue; }
   existing=() listed=0
   for i in "${!FILES[@]}"; do
-    [ "${FILE_DESTS[i]}" = "$DEST" ] || continue
+    [ "${BLOCK_ARCHIVES[FILE_BLOCKS[i]]}" = "$a" ] || continue
     listed=$((listed + 1))
     f=${FILES[i]}
-    case $f in /* | .. | ../* | */.. | */../*) err "$f: outside the repo, not backed up to $DEST"; continue ;; esac
-    [ -e "$f" ] || { err "$f: missing, not backed up to $DEST"; continue; }
+    case $f in /* | .. | ../* | */.. | */../*) err "$f: outside the repo, not backed up to $where"; continue ;; esac
+    [ -e "$f" ] || { err "$f: missing, not backed up to $where"; continue; }
     rc=0; "$GIT" check-ignore -q -- "$(git_path "$f")" || rc=$?
     case $rc in
       0) existing+=("$f") ;;
-      1) err "$f: not gitignored (or tracked by git), not backed up to $DEST" ;;
-      *) err "$f: git check-ignore failed, not backed up to $DEST" ;;
+      1) err "$f: not gitignored (or tracked by git), not backed up to $where" ;;
+      *) err "$f: git check-ignore failed, not backed up to $where" ;;
     esac
   done
-  [ "$listed" -gt 0 ] || { err "dest '$DEST' has no paths listed under it in $CONF"; continue; }
-  [ ${#existing[@]} -gt 0 ] || { log "nothing to back up to $DEST, skipping"; continue; }
+  [ "$listed" -gt 0 ] || { err "dest '$DEST' (name '$NAME') has no paths listed under it in $CONF"; continue; }
+  [ ${#existing[@]} -gt 0 ] || { log "nothing to back up to $where, skipping"; continue; }
 
   # Skip the upload if the hash of all file contents (symlinks followed) is unchanged.
   # The last hash is kept in the common git dir, keyed by dest, name and real paths, so
   # a path linked into several worktrees is uploaded once per change. C locale: same
   # order, so same key and hash, whatever locale the hook runs under
-  real=$(realpath "${existing[@]}" | LC_ALL=C sort) || { err "can't resolve the paths for $DEST, not backed up"; continue; }
+  real=$(realpath "${existing[@]}" | LC_ALL=C sort) || { err "can't resolve the paths for $where, not backed up"; continue; }
   key=$(printf '%s\n' "$DEST" "$NAME" "$real" | sha256sum | cut -c1-16)
   state="$common/untracked-$key.sha"
   hash=$(find -L "${existing[@]}" -type f -print0 | LC_ALL=C sort -z | xargs -0r sha256sum | sha256sum | cut -d' ' -f1) ||
-    { err "can't read the files for $DEST, not backed up"; continue; }
+    { err "can't read the files for $where, not backed up"; continue; }
   prev=  # no state file: never backed up
-  [ ! -e "$state" ] || prev=$(cat "$state") || err "can't read $state, uploading $DEST anyway"
-  [ -z "$FORCE" ] && [ "$hash" = "$prev" ] && { log "no changes for $DEST since last backup"; continue; }
+  [ ! -e "$state" ] || prev=$(cat "$state") || err "can't read $state, uploading $where anyway"
+  [ -z "$FORCE" ] && [ "$hash" = "$prev" ] && { log "no changes for $where since last backup"; continue; }
 
-  tar -chzf "$tmp" "${existing[@]}" || { err "can't archive the files for $DEST, not backed up"; continue; }
-  [[ $DEST == *: ]] && sep= || sep=/  # "remote:" root takes no slash
-  target="$DEST$sep$NAME/$(date +%F_%H%M%S)_$COMMIT.tar.gz"
+  tar -chzf "$tmp" "${existing[@]}" || { err "can't archive the files for $where, not backed up"; continue; }
+  target="$where/$(date +%F_%H%M%S)_$COMMIT.tar.gz"
   rc=0; lsf_err=$("$RCLONE" lsf "$target" 2>&1 >/dev/null) || rc=$?  # keep only stderr
   case $rc in
     0) err "$target already exists, not overwriting"; continue ;;
@@ -137,6 +151,6 @@ for DEST in "${DESTS[@]}"; do
   esac
   "$RCLONE" copyto "$tmp" "$target" || { err "upload to $target failed"; continue; }
   echo "untracked: backed up ${#existing[@]} path(s) to $target"
-  echo "$hash" > "$state" || err "can't save $state, $DEST is uploaded again next time"
+  echo "$hash" > "$state" || err "can't save $state, $where is uploaded again next time"
 done
 finish

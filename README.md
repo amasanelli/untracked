@@ -93,10 +93,14 @@ secrets/
 
 dest=gdrive-crypt:shared
 config/local.yml
+
+dest=gdrive-crypt:backups
+name=myrepo-data
+data/
 ```
 
-- `dest`: rclone remote, optionally with a path (`gdrive-crypt`, `gdrive-crypt:`, `gdrive-crypt:backups`). The remote must exist in `rclone.conf`. Applies to the paths listed after it, up to the next `dest`. Repeating a `dest` adds more paths to it. A path listed before the first `dest`, or a `dest` with no paths, is an error.
-- `name`: optional folder name, used for every dest. Defaults to the origin repo name, else the main worktree's dir name.
+- `dest`: rclone remote, optionally with a path (`gdrive-crypt`, `gdrive-crypt:`, `gdrive-crypt:backups`). The remote must exist in `rclone.conf`. It starts a block: the paths listed after it, up to the next `dest`. Repeating a `dest` with the same name adds more paths to its archive. A path listed before the first `dest`, or a block with no paths, is an error.
+- `name`: optional folder name. Before the first `dest` it is the default for every block; inside a block it names that block only, so one dest can hold several archives in different folders (above, `data/` goes to `gdrive-crypt:backups/myrepo-data/`, apart from `.env` and `secrets/`). A block without a name uses the default, else the origin repo name, else the main worktree's dir name.
 - any other line: file or dir relative to the repo root. It must exist and be gitignored; a missing, tracked, absolute or `..` path is an error. Symlinks are followed: the archive holds what they point to.
 - lines starting with `#` are comments.
 
@@ -117,7 +121,7 @@ A path linked from several worktrees is uploaded once per change, by whichever w
 
 ## Output
 
-Each dest gets its own archive, a new file `<dest>/<name>/YYYY-MM-DD_HHMMSS_<sha>.tar.gz` holding only its paths, where `<sha>` is the short hash of the commit checked out at backup time, i.e. the parent of the commit being made (`none` on the first commit). Existing files are never overwritten.
+Each dest and name gets its own archive, a new file `<dest>/<name>/YYYY-MM-DD_HHMMSS_<sha>.tar.gz` holding only its paths, where `<sha>` is the short hash of the commit checked out at backup time, i.e. the parent of the commit being made (`none` on the first commit). Existing files are never overwritten.
 
 List backups, and the files inside one:
 
@@ -126,7 +130,7 @@ rclone lsl gdrive-crypt:backups/myrepo/
 rclone cat gdrive-crypt:backups/myrepo/2026-09-24_220438_4e67d3c.tar.gz | tar -tzv
 ```
 
-A dest is uploaded only when its files changed since its last backup (hash kept in `.git/untracked-<id>.sha`, shared by all worktrees). To upload every dest anyway, run inside the repo:
+An archive is uploaded only when its files changed since its last backup (hash kept in `.git/untracked-<id>.sha`, shared by all worktrees). To upload every archive anyway, run inside the repo:
 
 ```bash
 untracked.sh -f
@@ -134,7 +138,7 @@ untracked.sh -f
 
 ## Errors
 
-Any problem prints an `untracked: ERROR:` line: no `.untracked.conf`, a `dest` with no paths, a listed path that is missing, not gitignored or outside the repo, an unknown remote, a file that can't be read, a failed upload, an archive name that already exists. The other dests are still backed up, then the hook exits 1 and git aborts the commit.
+Any problem prints an `untracked: ERROR:` line: no `.untracked.conf`, a block with no paths, a listed path that is missing, not gitignored or outside the repo, an unknown remote, a file that can't be read, a failed upload, an archive name that already exists. The other archives are still backed up, then the hook exits 1 and git aborts the commit.
 
 Fix the problem and commit again, or skip the backup for one commit:
 
